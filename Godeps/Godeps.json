@@ -1,5 +1,5 @@
 {
-	"ImportPath": "github.com/sostheim/kube-gci-conf",
+	"ImportPath": "github.com/samsung-cnct/gci-iptables-conf-agent",
 	"GoVersion": "go1.7",
 	"Deps": []
 }
