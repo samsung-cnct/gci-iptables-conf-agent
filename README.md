@@ -13,6 +13,7 @@ See for reference the discussion in the Kubernetes Github [Issue 6545]
 
 The solution provided here is a small Go application that runs as a DaemonSet
 and performs the following:
+
 1. Discovers the Cluster IP address CIDR from the [GCI Instance Metadata](https://cloud.google.com/compute/docs/storing-retrieving-metadata). 
 2. Read the Kubernetes node host's IP tables rules.
 3. Insert a Cluster IP specific rule in the NAT POSTROUTING table that preceeds
