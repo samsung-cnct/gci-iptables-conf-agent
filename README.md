@@ -22,3 +22,8 @@ git clone https://github.com/samsung-cnct/gci-iptables-conf-agent.git
 cd gci-iptables-conf-agent
 CGO_ENABLED=0 GOOS=linux godep go build -a -ldflags '-w' -o gci_iptables_conf_agent
 ```
+## Building the Docker Image
+
+```
+docker build --rm -t gci-iptables-conf-agent .
+```

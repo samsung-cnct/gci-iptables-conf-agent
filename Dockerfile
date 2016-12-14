@@ -25,7 +25,7 @@ MAINTAINER Rick Sostheim
 LABEL vendor="Samsung CNCT"
 # Add; iptables 1.4.21 (for strict compatability with GCI ChromiumOS iptables version)
 RUN apk --update add iptables
-COPY gci_iptables_conf /
+COPY gci_iptables_conf_agent /
 # OCI RunC standard requires numeric user id's
 USER 0
-ENTRYPOINT ["/gci_iptables_conf"]
+ENTRYPOINT ["/gci_iptables_conf_agent"]
