@@ -1,0 +1,5 @@
+{
+	"ImportPath": "github.com/sostheim/kube-gci-conf",
+	"GoVersion": "go1.7",
+	"Deps": []
+}
