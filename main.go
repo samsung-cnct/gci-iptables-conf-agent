@@ -16,12 +16,13 @@
 package main
 
 import (
+	iptables "github.com/samsung-cnct/gci-iptables-conf-agent/iptables"
+
 	"bytes"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -108,60 +109,10 @@ func getBufferKeyValue(key string, body []byte) string {
 	return ""
 }
 
-// IPTablesSave executes the system command "iptables-save -c" and returns either
-// success: the resultant byte array containing stdout, error = nil
-// failure: the resultant byte array containing stderr, error is set
-func IPTablesSave() ([]byte, error) {
-
-	// iptables-save with couter values (for now, until this becomes an option: arg)..
-	cmd := exec.Command("iptables-save", "-c")
-	stdoutBuf := &bytes.Buffer{}
-	stderrBuf := &bytes.Buffer{}
-	cmd.Stdout = stdoutBuf
-	cmd.Stderr = stderrBuf
-
-	if err := cmd.Run(); err != nil {
-		log.Print(fmt.Sprintf("IPTablesSave: cmd.Run error return: %v", err))
-		return stderrBuf.Bytes(), err
-	}
-
-	return stdoutBuf.Bytes(), nil
-}
-
-// IPTablesRestore executes the system command "iptables-restore < 'stdin'"
-func IPTablesRestore(stdin []byte) error {
-
-	// iptables-restore with couter values (for now, until this becomes an option: arg).
-	cmd := exec.Command("iptables-restore", "-c")
-	stdoutBuf := &bytes.Buffer{}
-	stderrBuf := &bytes.Buffer{}
-	cmd.Stdout = stdoutBuf
-	cmd.Stderr = stderrBuf
-	cmd.Stdin = bytes.NewBuffer(stdin)
-
-	if err := cmd.Run(); err != nil {
-		log.Print(fmt.Sprintf("IPTablesRestore: cmd.Run error return: %v, stderr: %s, stdout: %s", err, stderrBuf, stdoutBuf))
-		return err
-	}
-	return nil
-}
-
-func ipTablesContainsRulePart(match string, saveBuf [][]byte) int {
-
-	matchBytes := []byte(match)
-	for i := range saveBuf {
-		if bytes.Contains(saveBuf[i], matchBytes) {
-			return i
-		}
-	}
-
-	return -1
-}
-
-// IPTablesValidate checks a iptables-save generated buffer for several
+// ValidateIPTables checks a iptables-save generated buffer for several
 // chacteristics to determine if it meets the needs of our private IP
 // address space VPN tunnel routing rules.
-func IPTablesValidate(save []byte, clusterIP string) ([]int, bool) {
+func ValidateIPTables(save []byte, clusterIP string) ([]int, bool) {
 	// Validations:
 	// 0 - Only validate those rules in the '*nat' iptables-save output (not tested - implied)
 	// 1 - If the save buffer contains the 10.0.0.0/8 MASQUERADE rule, then
@@ -178,8 +129,8 @@ func IPTablesValidate(save []byte, clusterIP string) ([]int, bool) {
 	saveBuf := bytes.Split(save, []byte("\n"))
 	clusterIPRule := natPostRoutingPrefix + " ! -d " + clusterIP
 	indicies := []int{
-		ipTablesContainsRulePart(kubenetNATChainRule, saveBuf),
-		ipTablesContainsRulePart(clusterIPRule, saveBuf)}
+		iptables.ContainsRulePart(kubenetNATChainRule, saveBuf),
+		iptables.ContainsRulePart(clusterIPRule, saveBuf)}
 
 	// Line 0 of every iptables-save buffer is a comment
 	// Check 1, 1.a, and 1.b
@@ -216,7 +167,7 @@ func ConfigureIPTables(save []byte, clusterIP string, indicies []int) ([]byte, b
 	}
 
 	restore := bytes.Join(restoreBuf, []byte("\n"))
-	_, valid := IPTablesValidate(restore, clusterIP)
+	_, valid := ValidateIPTables(restore, clusterIP)
 
 	return restore, valid
 }
@@ -236,12 +187,12 @@ func main() {
 
 	for {
 		time.Sleep(1 * time.Minute)
-		ipTables, err := IPTablesSave()
+		ipTables, err := iptables.Save()
 		if err != nil {
 			log.Print(err)
 			continue
 		}
-		indicies, valid := IPTablesValidate(ipTables, value)
+		indicies, valid := ValidateIPTables(ipTables, value)
 		log.Print(fmt.Sprintf("Kubenet Rule Index: %d, Cluster IP Rule Index: %d", indicies[0], indicies[1]))
 		if valid {
 			log.Print("IP Tables NAT table check: ok")
@@ -250,7 +201,7 @@ func main() {
 			restore, valid := ConfigureIPTables(ipTables, value, indicies)
 			if valid {
 				log.Print("NAT table reconfiguration restore buffer created successfully")
-				if err := IPTablesRestore(restore); err == nil {
+				if err := iptables.Restore(restore); err == nil {
 					log.Print("iptables-restore successful")
 				} else {
 					log.Print(fmt.Sprintf("iptables-restore failure: %v", err))

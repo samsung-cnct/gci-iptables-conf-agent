@@ -18,7 +18,7 @@ and performs the following:
 2. Read the Kubernetes node host's IP tables rules.
 3. Insert a Cluster IP specific rule in the NAT POSTROUTING table that preceeds
    the Kubenet inserted rule.
-   * Note: we do not remove/overwrite Kubenet's rule as it will try to self heal.  
+   * Note: Do not modify/remove Kubenet's rule as Kubenet will try to fix it.  
 4. Monitor IP tables rule forever to monitor changes - self healing as needed.
 
 ## Building
