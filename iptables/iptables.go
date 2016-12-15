@@ -31,7 +31,31 @@ const (
 
 	argC       = "-c"
 	argCounter = "--counter"
+	argVersion = "--version"
+
+	Version1414    = "1.4.14"
+	Version1421    = "1.4.21"
+	Version160     = "1.6.0"
+	DefaultVersion = Version1421
 )
+
+// VersionCheck executes the system command "iptables --version" and returns either
+// true, nil: the command is executeable and this version of iptables is supported
+// false, nil: the command is executeable but this is an unsupported version of iptables
+// _, error: the command cannot be executed
+func VersionCheck(version string) (bool, string, error) {
+	// iptables --version
+	cmd := exec.Command(cmd, argVersion)
+	stdoutBuf := &bytes.Buffer{}
+	cmd.Stdout = stdoutBuf
+
+	if err := cmd.Run(); err != nil {
+		log.Print(fmt.Sprintf("Check: cmd.Run error return: %v", err))
+		return false, "", err
+	}
+
+	return bytes.Contains(stdoutBuf.Bytes(), []byte(version)), string(stdoutBuf.Bytes()), nil
+}
 
 // Save executes the system command "iptables-save -c" and returns either
 // success: the resultant byte array containing stdout, error = nil
