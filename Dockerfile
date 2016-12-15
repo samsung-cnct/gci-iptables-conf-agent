@@ -23,9 +23,19 @@
 FROM alpine:3.3
 MAINTAINER Rick Sostheim
 LABEL vendor="Samsung CNCT"
-# Add; iptables 1.4.21 (for strict compatability with GCI ChromiumOS iptables version)
+
+# Add iptables 1.4.21 (current version in alpine:3.3)
 RUN apk --update add iptables
-COPY gci_iptables_conf_agent /
+
+# GCI is 1.4.21, Container VM is 1.4.14
+# Indicate any irrelevant value as "*" => "wildcard / don't care"
+ENV IPTABLES_MAJOR=1 IPTABLES_MINOR=4 IPTABLES_PATCH=* IPTABLES_VERSION=1.4.14
+
+# Sleep interval - in seconds.
+ENV IPTABLES_CHECK_INTERVAL=60
+
 # OCI RunC standard requires numeric user id's
 USER 0
+
+COPY gci_iptables_conf_agent /
 ENTRYPOINT ["/gci_iptables_conf_agent"]

@@ -19,3 +19,4 @@ spec:
         image: quay.io/samsung_cnct/gci-iptables-config-agent
         securityContext:
           privileged: true
+

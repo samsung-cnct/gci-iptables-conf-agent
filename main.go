@@ -16,6 +16,8 @@
 package main
 
 import (
+	"os"
+
 	iptables "github.com/samsung-cnct/gci-iptables-conf-agent/iptables"
 
 	"bytes"
@@ -23,6 +25,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -63,11 +66,38 @@ const (
 	natPostRoutingSuffix = "-m addrtype ! --dst-type LOCAL -j MASQUERADE"
 	kubenetNATChainRule  = natPostRoutingPrefix + " ! -d 10.0.0.0/8"
 	kubenetSNATComment   = "kubenet: SNAT for outbound traffic from cluster"
-	clusterIPSNATComment = " -m comment --comment \"Cluster IP SNAT for outbound traffic\" "
+	clusterIPSNATComment = " -m comment --comment \"Cluster IP SNAT: for outbound traffic\" "
+)
+
+var (
+	clusterIP string
+	interval  int
 )
 
 func init() {
 	log.SetFlags(0)
+	log.Print("gci-iptables-conf-agent: initialization")
+
+	if !CheckIPTablesVersion() {
+		log.Fatal("Can't continue without a supported version of host system 'iptables' command")
+	}
+
+	body, err := getKubEnvInstanceAttributes()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	clusterIP = getBufferKeyValue(envClusterIPRangeCIDR, body)
+	if len(clusterIP) == 0 {
+		log.Fatal("Can't continue without a valid value for Cluster IP Range CIDR")
+	}
+	log.Print(fmt.Sprintf("Working Cluster IP Range CIDR: %s\n", clusterIP))
+
+	interval, err = strconv.Atoi(os.Getenv("IPTABLES_CHECK_INTERVAL"))
+	if err != nil {
+		interval = 60
+	}
+	log.Print(fmt.Sprintf("Working iptables check interval: %d seconds\n", interval))
 }
 
 func getKubEnvInstanceAttributes() ([]byte, error) {
@@ -109,6 +139,40 @@ func getBufferKeyValue(key string, body []byte) string {
 	return ""
 }
 
+// CheckIPTablesVersion checks to ensure we are workign with a supported
+// version of the iptables save and restore table/chain/rule formats.
+func CheckIPTablesVersion() bool {
+	version := os.Getenv("IPTABLES_VERSION")
+	if len(version) == 0 {
+		version = iptables.DefaultVersion
+	}
+	match, outstr, err := iptables.VersionCheck(version)
+	if err != nil {
+		log.Fatal("Can't execute system command 'iptables --version' - quitting!")
+	}
+	if match {
+		log.Print(fmt.Sprintf("Accepting actual version: %s, satisfies requested: %s", strings.TrimSpace(outstr), version))
+		return true
+	}
+	major := os.Getenv("IPTABLES_MAJOR")
+	minor := os.Getenv("IPTABLES_MINOR")
+	patch := os.Getenv("IPTABLES_PATCH")
+	if major == "*" || minor == "*" {
+		// If we don't care about the major or minor version, then
+		// that's good enough to continue on with.
+		log.Print(fmt.Sprintf("Accepting actual version: %s, by wildcarded major|minor numbers", strings.TrimSpace(outstr)))
+		return true
+	}
+	version = major + "." + minor + "."
+	if patch != "*" {
+		version += patch
+	}
+	log.Print(fmt.Sprintf("Checking version: %s, major: %s, minor: %s, patch: %s, version string: %s",
+		version, major, minor, patch, strings.TrimSpace(outstr)))
+
+	return strings.Contains(outstr, version)
+}
+
 // ValidateIPTables checks a iptables-save generated buffer for several
 // chacteristics to determine if it meets the needs of our private IP
 // address space VPN tunnel routing rules.
@@ -136,11 +200,15 @@ func ValidateIPTables(save []byte, clusterIP string) ([]int, bool) {
 	// Check 1, 1.a, and 1.b
 	if indicies[0] > 0 && indicies[1] > 0 && indicies[0] > indicies[1] {
 		// do our extended checking now
-		if strings.Contains(string(saveBuf[indicies[1]]), kubenetSNATComment) &&
-			strings.HasSuffix(string(saveBuf[indicies[0]]), natPostRoutingSuffix) &&
-			strings.HasSuffix(string(saveBuf[indicies[1]]), natPostRoutingSuffix) {
-			return indicies, true
+		if !strings.HasSuffix(string(saveBuf[indicies[0]]), natPostRoutingSuffix) {
+			log.Print("Failure: Cluster IP rule suffix is incorrect")
+			return indicies, false
 		}
+		if !strings.HasSuffix(string(saveBuf[indicies[1]]), natPostRoutingSuffix) {
+			log.Print("Failure: Kubenet rule suffix is incorrect.")
+			return indicies, false
+		}
+		return indicies, true
 	}
 	return indicies, false
 }
@@ -174,31 +242,21 @@ func ConfigureIPTables(save []byte, clusterIP string, indicies []int) ([]byte, b
 
 func main() {
 
-	body, err := getKubEnvInstanceAttributes()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	value := getBufferKeyValue(envClusterIPRangeCIDR, body)
-	if len(value) == 0 {
-		log.Fatal("Can't continue without a valid value for Cluster IP Range CIDR")
-	}
-	log.Print(fmt.Sprintf("Working Cluster IP Range CIDR: %s\n", value))
-
+	log.Print("gci-iptables-conf-agent: main service loop beginning...")
 	for {
-		time.Sleep(1 * time.Minute)
+		time.Sleep(time.Duration(interval) * time.Second)
 		ipTables, err := iptables.Save()
 		if err != nil {
 			log.Print(err)
 			continue
 		}
-		indicies, valid := ValidateIPTables(ipTables, value)
+		indicies, valid := ValidateIPTables(ipTables, clusterIP)
 		log.Print(fmt.Sprintf("Kubenet Rule Index: %d, Cluster IP Rule Index: %d", indicies[0], indicies[1]))
 		if valid {
 			log.Print("IP Tables NAT table check: ok")
 		} else {
 			log.Print("Found problem NAT table issue")
-			restore, valid := ConfigureIPTables(ipTables, value, indicies)
+			restore, valid := ConfigureIPTables(ipTables, clusterIP, indicies)
 			if valid {
 				log.Print("NAT table reconfiguration restore buffer created successfully")
 				if err := iptables.Restore(restore); err == nil {
