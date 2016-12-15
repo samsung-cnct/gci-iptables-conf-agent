@@ -66,7 +66,7 @@ const (
 	natPostRoutingSuffix = "-m addrtype ! --dst-type LOCAL -j MASQUERADE"
 	kubenetNATChainRule  = natPostRoutingPrefix + " ! -d 10.0.0.0/8"
 	kubenetSNATComment   = "kubenet: SNAT for outbound traffic from cluster"
-	clusterIPSNATComment = " -m comment --comment \"Cluster IP SNAT: for outbound traffic\" "
+	clusterIPSNATComment = " -m comment --comment \"ClusterIP: SNAT for outbound traffic\" "
 )
 
 var (
@@ -146,7 +146,7 @@ func CheckIPTablesVersion() bool {
 	if len(version) == 0 {
 		version = iptables.DefaultVersion
 	}
-	match, outstr, err := iptables.VersionCheck(version)
+	match, outstr, err := iptables.VersionCheckCmd(version)
 	if err != nil {
 		log.Fatal("Can't execute system command 'iptables --version' - quitting!")
 	}
@@ -193,8 +193,8 @@ func ValidateIPTables(save []byte, clusterIP string) ([]int, bool) {
 	saveBuf := bytes.Split(save, []byte("\n"))
 	clusterIPRule := natPostRoutingPrefix + " ! -d " + clusterIP
 	indicies := []int{
-		iptables.ContainsRulePart(kubenetNATChainRule, saveBuf),
-		iptables.ContainsRulePart(clusterIPRule, saveBuf)}
+		iptables.ContainsRulePart(saveBuf, kubenetNATChainRule),
+		iptables.ContainsRulePart(saveBuf, clusterIPRule)}
 
 	// Line 0 of every iptables-save buffer is a comment
 	// Check 1, 1.a, and 1.b
