@@ -69,6 +69,10 @@ const (
 	clusterIPSNATComment = " -m comment --comment \"ClusterIP: SNAT for outbound traffic\" "
 )
 
+type Indicies struct {
+	kubenet, cluster int
+}
+
 var (
 	clusterIP string
 	interval  int
@@ -87,7 +91,7 @@ func init() {
 		log.Fatal(err)
 	}
 
-	clusterIP = getBufferKeyValue(envClusterIPRangeCIDR, body)
+	clusterIP = getBufferKeyValue(body, envClusterIPRangeCIDR)
 	if len(clusterIP) == 0 {
 		log.Fatal("Can't continue without a valid value for Cluster IP Range CIDR")
 	}
@@ -126,8 +130,9 @@ func getKubEnvInstanceAttributes() ([]byte, error) {
 	return b, nil
 }
 
-func getBufferKeyValue(key string, body []byte) string {
-
+// searches a buffer for a specific key string.  the buffer is a assumed to be a
+// byte array composed of multiple input lines delinieated by \n's (e.g. stdout)
+func getBufferKeyValue(body []byte, key string) string {
 	buf := bytes.Split(body, []byte("\n"))
 	keyBytes := []byte(key)
 	for i := range buf {
@@ -176,7 +181,7 @@ func CheckIPTablesVersion() bool {
 // ValidateIPTables checks a iptables-save generated buffer for several
 // chacteristics to determine if it meets the needs of our private IP
 // address space VPN tunnel routing rules.
-func ValidateIPTables(save []byte, clusterIP string) ([]int, bool) {
+func ValidateIPTables(save []byte, clusterIP string) (Indicies, bool) {
 	// Validations:
 	// 0 - Only validate those rules in the '*nat' iptables-save output (not tested - implied)
 	// 1 - If the save buffer contains the 10.0.0.0/8 MASQUERADE rule, then
@@ -192,19 +197,19 @@ func ValidateIPTables(save []byte, clusterIP string) ([]int, bool) {
 
 	saveBuf := bytes.Split(save, []byte("\n"))
 	clusterIPRule := natPostRoutingPrefix + " ! -d " + clusterIP
-	indicies := []int{
+	indicies := Indicies{
 		iptables.ContainsRulePart(saveBuf, kubenetNATChainRule),
 		iptables.ContainsRulePart(saveBuf, clusterIPRule)}
 
 	// Line 0 of every iptables-save buffer is a comment
 	// Check 1, 1.a, and 1.b
-	if indicies[0] > 0 && indicies[1] > 0 && indicies[0] > indicies[1] {
+	if indicies.kubenet > 0 && indicies.cluster > 0 && indicies.kubenet > indicies.cluster {
 		// do our extended checking now
-		if !strings.HasSuffix(string(saveBuf[indicies[0]]), natPostRoutingSuffix) {
+		if !strings.HasSuffix(string(saveBuf[indicies.kubenet]), natPostRoutingSuffix) {
 			log.Print("Failure: Cluster IP rule suffix is incorrect")
 			return indicies, false
 		}
-		if !strings.HasSuffix(string(saveBuf[indicies[1]]), natPostRoutingSuffix) {
+		if !strings.HasSuffix(string(saveBuf[indicies.cluster]), natPostRoutingSuffix) {
 			log.Print("Failure: Kubenet rule suffix is incorrect.")
 			return indicies, false
 		}
@@ -216,22 +221,23 @@ func ValidateIPTables(save []byte, clusterIP string) ([]int, bool) {
 // ConfigureIPTables forces the iptables-save generated buffer to comply
 // with the chacteristics required to meet the needs of our private IP
 // address space VPN tunnel routing rules.
-func ConfigureIPTables(save []byte, clusterIP string, indicies []int) ([]byte, bool) {
+func ConfigureIPTables(save []byte, clusterIP string, indicies Indicies) ([]byte, bool) {
 	restoreBuf := bytes.Split(save, []byte("\n"))
 
 	// The first fix for all systems we expect to make is to find only the one Kubenet SNAT rule and no Cluster IP SNAT
-	if indicies[0] > 0 && indicies[1] == -1 {
+	if indicies.kubenet > 0 && indicies.cluster == -1 {
 		// In this case, we must insert the Cluster IP SNAT Rule, making sure to leave the Kubenet SNAT rule in place,
 		// as we know kubenet will forever try to reinsert this rule if it is not present.
 		restoreBuf = append(restoreBuf, []byte(""))
-		copy(restoreBuf[indicies[0]+1:], restoreBuf[indicies[0]:])
-		restoreBuf[indicies[0]] =
+		copy(restoreBuf[indicies.kubenet+1:], restoreBuf[indicies.kubenet:])
+		restoreBuf[indicies.kubenet] =
 			[]byte(natPostRoutingPrefix + " ! -d " + clusterIP + clusterIPSNATComment + natPostRoutingSuffix)
 
-	} else if indicies[0] > 0 && indicies[1] > 0 && indicies[0] < indicies[1] {
+	} else if indicies.kubenet > 0 && indicies.cluster > 0 && indicies.kubenet < indicies.cluster {
 		// The easiest of all fixes is to swap the position of Cluster IP SNAT Rule
 		// and the Kubenet SNAT rule if they are simply out of order.
-		restoreBuf[indicies[0]], restoreBuf[indicies[1]] = restoreBuf[indicies[1]], restoreBuf[indicies[0]]
+		restoreBuf[indicies.kubenet], restoreBuf[indicies.cluster] =
+			restoreBuf[indicies.cluster], restoreBuf[indicies.kubenet]
 	}
 
 	restore := bytes.Join(restoreBuf, []byte("\n"))
@@ -251,7 +257,8 @@ func main() {
 			continue
 		}
 		indicies, valid := ValidateIPTables(ipTables, clusterIP)
-		log.Print(fmt.Sprintf("Kubenet Rule Index: %d, Cluster IP Rule Index: %d", indicies[0], indicies[1]))
+		log.Print(fmt.Sprintf("Kubenet Rule Index: %d, Cluster IP Rule Index: %d",
+			indicies.kubenet, indicies.cluster))
 		if valid {
 			log.Print("IP Tables NAT table check: ok")
 		} else {
