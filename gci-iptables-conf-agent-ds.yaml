@@ -1,22 +1,23 @@
 apiVersion: extensions/v1beta1
 kind: DaemonSet
 metadata:
+  name: iptables-agent 
   labels:
-    app: gci-iptables-config-agent
-   name: gci-iptables-config-agent
+    name: iptables-agent 
+    app: iptables-agent
+    version: 0.1.0
 spec:
   template:
     metadata:
       labels:
-        app: gci-iptables-config-agent
-        name: gci-iptables-config-agent
+        app: iptables-agent
+        version: 0.1.0
     spec:
       hostNetwork: true
-      nodeSelector: 
-        app: gci-iptables-config-agent
       containers:
-        name: gci-iptables-config-agent
+      - name: gci-iptables-config-agent
         image: quay.io/samsung_cnct/gci-iptables-config-agent
         securityContext:
           privileged: true
+      terminationGracePeriodSeconds: 65
 

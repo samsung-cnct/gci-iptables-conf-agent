@@ -24,15 +24,38 @@ and performs the following:
 ## Building
 From source, create the Go static binary:
 ```
-mkdir -p "${GOPATH}/src/github.com/samsung-cnct"
-cd "${GOPATH}/src/github.com/samsung-cnct"
-git clone https://github.com/samsung-cnct/gci-iptables-conf-agent.git
-cd gci-iptables-conf-agent
-CGO_ENABLED=0 GOOS=linux godep go build -a -ldflags '-w' -o gci_iptables_conf_agent
+$ mkdir -p "${GOPATH}/src/github.com/samsung-cnct"
+$ cd "${GOPATH}/src/github.com/samsung-cnct"
+$ git clone https://github.com/samsung-cnct/gci-iptables-conf-agent.git
+$ cd gci-iptables-conf-agent
+$ CGO_ENABLED=0 GOOS=linux godep go build -a -ldflags '-w' -o gci_iptables_conf_agent
 ```
 ## Building the Docker Image
 Build and push the docker image, replacing Quay with your target registry.
 ```
-docker build --rm -t gci-iptables-conf-agent .
-docker push quay.io/samsung_cnct/gci-iptables-conf-agent
+$ docker build --rm --tag quay.io/samsung_cnct/gci-iptables-conf-agent .
+$ docker push quay.io/samsung_cnct/gci-iptables-conf-agent:latest
+```
+
+## Helm Chart
+This project is also packaged as a Helm Chart here: [GCI IPTables Helm Chart](https://github.com/samsung-cnct/k2-charts/tree/master/gci-iptables-conf-agent)
+
+The Helm chart can be deployed in to a GKE Kubernets cluster with the following commands:
+
+```
+$ helm repo add cnct http://atlas.cnct.io
+$ helm install cnct/gci-iptables-conf-agent
+$ helm list
+NAME           	REVISION	UPDATED                 	STATUS  	CHART                        
+veering-buffoon	1       	Fri Dec 16 16:31:13 2016	DEPLOYED	gci-iptables-conf-agent-0.1.0
+
+rastop:templates sostheim$ helm status veering-buffoon
+LAST DEPLOYED: Fri Dec 16 16:31:13 2016
+NAMESPACE: default
+STATUS: DEPLOYED
+
+RESOURCES:
+==> extensions/DaemonSet
+NAME             DESIRED   CURRENT   NODE-SELECTOR   AGE
+iptables-agent   8         8         <none>          1d
 ```
