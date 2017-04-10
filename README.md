@@ -6,8 +6,7 @@ current manner in which the kubenet plugin generates NAT iptables creates a
 cluster MASQUERADE NAT rule that prevents correctly routing traffic between the 
 two RFC 1918 address spaces.
 
-See for reference the discussion in the Kubernetes Github [Issue 6545]
-(https://github.com/kubernetes/kubernetes/issues/6545)
+See for reference the discussion in the Kubernetes Github [Issue 6545](https://github.com/kubernetes/kubernetes/issues/6545)
 
 ## Current Solution
 
@@ -59,3 +58,49 @@ RESOURCES:
 NAME             DESIRED   CURRENT   NODE-SELECTOR   AGE
 iptables-agent   8         8         <none>          1d
 ```
+
+## Checking The Results
+First, is the agent running on the node that you are checking?
+```
+$ kubectl get pod | grep iptables-agent | cut -d' ' -f1 | xargs kubectl describe pod | grep Node
+Node:		gke-zonar-production-cluster-primary-e8df4da1-4zd1/10.142.0.12
+Node:		gke-zonar-production-cluster-primary-e8df4da1-tg0m/10.142.0.7
+Node:		gke-zonar-production-cluste-secondary-4f6ea563-lnkv/10.142.0.19
+Node:		gke-zonar-production-cluster-primary-e8df4da1-jff9/10.142.0.6
+Node:		gke-zonar-production-cluste-secondary-a2b2807c-x3bd/10.142.0.13
+Node:		gke-zonar-production-cluste-secondary-a2b2807c-1mkk/10.142.0.16
+Node:		gke-zonar-production-cluster-primary-37de06ee-evjx/10.142.0.5
+Node:		gke-zonar-production-cluste-secondary-4f6ea563-f7r3/10.142.0.8
+Node:		gke-zonar-production-cluster-primary-37de06ee-r30t/10.142.0.17
+Node:		gke-zonar-production-cluste-secondary-a2b2807c-gccw/10.142.0.2
+Node:		gke-zonar-production-cluste-secondary-4f6ea563-pp5g/10.142.0.9
+Node:		gke-zonar-production-cluster-primary-e8df4da1-c6tz/10.142.0.18
+Node:		gke-zonar-production-cluste-secondary-4f6ea563-2d46/10.142.0.14
+Node:		gke-zonar-production-cluster-primary-37de06ee-655p/10.142.0.11
+Node:		gke-zonar-production-cluster-primary-37de06ee-fejp/10.142.0.4
+Node:		gke-zonar-production-cluste-secondary-a2b2807c-k0n1/10.142.0.3
+```
+
+If the Node in question doesn't show up in the list above, then the agent isn't running on it.
+
+Once you know the node is present, running the following command:
+
+```
+$ kubectl logs --tail=10 iptables-agent-1pw1z
+Kubenet Rule Index: 80, Cluster IP Rule Index: 79
+IP Tables NAT table check: ok
+Kubenet Rule Index: 80, Cluster IP Rule Index: 79
+IP Tables NAT table check: ok
+Kubenet Rule Index: 80, Cluster IP Rule Index: 79
+IP Tables NAT table check: ok
+Kubenet Rule Index: 80, Cluster IP Rule Index: 79
+IP Tables NAT table check: ok
+Kubenet Rule Index: 80, Cluster IP Rule Index: 79
+IP Tables NAT table check: ok
+
+$ gcloud compute ssh gke-zonar-production-cluster-primary-e8df4da1-4zd1 -- sudo iptables-save | grep -n "SNAT for outbound"
+79:-A POSTROUTING ! -d 10.64.0.0/14 -m comment --comment "ClusterIP: SNAT for outbound traffic" -m addrtype ! --dst-type LOCAL -j MASQUERADE
+80:-A POSTROUTING ! -d 10.0.0.0/8 -m comment --comment "kubenet: SNAT for outbound traffic from cluster" -m addrtype ! --dst-type LOCAL -j MASQUERADE
+```
+
+The results above are correct if the log output is in agreement with the rules dispalyed byt the `ssh | grep -n`.  More specifically, the "ClusterIP: SNAT" rule preceeds the more general rule "kubenet: SNAT" rule in order in the iptables output.
