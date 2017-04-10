@@ -104,3 +104,16 @@ $ gcloud compute ssh gke-zonar-production-cluster-primary-e8df4da1-4zd1 -- sudo 
 ```
 
 The results above are correct if the log output is in agreement with the rules dispalyed byt the `ssh | grep -n`.  More specifically, the "ClusterIP: SNAT" rule preceeds the more general rule "kubenet: SNAT" rule in order in the iptables output.
+
+
+There is one more command you can try if you have a URL that you can attempt to reach from the host node:
+```
+$ gcloud compute ssh gke-zonar-production-cluster-primary-37de06ee-r30t -- curl -sk http://10.40.232.52
+<html>
+<head><title>302 Found</title></head>
+<body bgcolor="white">
+<center><h1>302 Found</h1></center>
+<hr><center>nginx/1.6.3</center>
+</body>
+</html>
+```
